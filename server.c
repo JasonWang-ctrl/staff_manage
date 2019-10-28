@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <sqlite3.h> //for sqlite3_open ..
 #include <signal.h>
+#include <time.h>
 #define PATH_DATA "./staff.db" //数据库
 #define N 32                                                                                               
 #define M 128
@@ -20,6 +21,7 @@
 #define QN 0x7  //根据name查询用户信息
 #define L 0x8  //登录
 #define E 0x9 //退出
+#define H 0xA //查询历史记录
 
 typedef struct{
 	int type;//消息类型
@@ -53,6 +55,9 @@ void process_query_all(int clientfd,MSG *msg,sqlite3 *db);
 void process_query_name(int clientfd,MSG *msg,sqlite3 *db);
 void process_revise_password(int clientfd,MSG *msg,sqlite3 *db);
 void process_self_query(int clientfd,MSG *msg,sqlite3 *db);
+void insert_history(MSG *msg,sqlite3 *db);
+void get_time(char *date);
+void process_history(int clientfd,MSG *msg,sqlite3 *db);
 
 
 void handler(int arg)
@@ -141,6 +146,9 @@ int main(int argc, const char *argv[])
 				case QU:
 					process_self_query(clientfd,&msg,db);
 					break;
+				case H:
+					process_history(clientfd,&msg,db);
+					break;
 				case E:
 					exit(0);
 				}
@@ -158,6 +166,79 @@ int main(int argc, const char *argv[])
 
 	return 0;
 }
+
+void insert_history(MSG *msg,sqlite3 *db)
+{
+	char sql[M]={0};
+	char *errmsg;
+	char date[64]={0};
+	get_time(date);//获得当前的日期
+	sprintf(sql,"insert into history values('%s','admin','%s')",date,msg->text);
+	if(sqlite3_exec(db,sql,NULL,NULL,&errmsg)!=SQLITE_OK)
+	{
+		printf("%s\n",errmsg);
+		return;
+	}
+}
+void get_time(char *date)//获得时间
+{
+	time_t mytime;
+	struct tm *mytm;
+	mytime=time(NULL);//得到秒数
+	mytm=localtime(&mytime);//得到当前的时间
+	sprintf(date,"%04d-%02d-%02d  %02d:%02d:%02d",mytm->tm_year+1900,mytm->tm_mon+1,mytm->tm_mday,\
+			mytm->tm_hour,mytm->tm_min,mytm->tm_sec);
+
+}
+void process_history(int clientfd,MSG *msg,sqlite3 *db)
+{
+	char sql[M]={0};
+	char *errmsg;
+	char **rep;
+	int n_row;
+	int n_column;
+	int i,j;
+	sprintf(sql,"select * from history");
+	if(sqlite3_get_table(db,sql,&rep,&n_row,&n_column,&errmsg)!=SQLITE_OK)
+	{
+		printf("%s\n",errmsg);
+		strcpy(msg->text,"Fail");
+		send(clientfd,msg,LEN_MSG,0);
+		return;
+	}
+	else
+	{
+		if(n_row==0)
+		{
+
+			strcpy(msg->text,"Fail");
+			send(clientfd,msg,LEN_MSG,0);
+			return;
+		}
+		else
+		{
+
+			strcpy(msg->text,"OK");
+			send(clientfd,msg,LEN_MSG,0);
+			for(i=0;i<n_row+1;i++)
+			{
+				for(j=0;j<n_column;j++)
+				{
+					strcpy(msg->text,*rep++);
+					send(clientfd,msg,LEN_MSG,0);
+					usleep(1000);//防止粘包
+				}
+			}
+			strcpy(msg->text,"over");
+			send(clientfd,msg,LEN_MSG,0);
+			return;
+		}
+	}
+}
+
+
+
+
 
 
 void process_login(int clientfd,MSG *msg,sqlite3 *db)
@@ -236,7 +317,10 @@ void process_add(int clientfd,MSG *msg,sqlite3 *db)
 	}
 	strcpy(msg->text,"OK");
 	send(clientfd,msg,LEN_MSG,0);
-
+	
+	//添加历史记录
+	sprintf(msg->text,"新增用户%s",msg->user_name);
+	insert_history(msg,db);
 	return;
 }
 
@@ -264,6 +348,9 @@ void process_del(int clientfd,MSG *msg,sqlite3 *db)
 
 	strcpy(msg->text,"OK");
 	send(clientfd,msg,LEN_MSG,0);
+	
+	sprintf(msg->text,"删除用户%s",msg->user_name);
+	insert_history(msg,db);
 	return;
 
 }
@@ -287,6 +374,10 @@ void process_update(int clientfd,MSG *msg,sqlite3 *db)
 
 	strcpy(msg->text,"OK");
 	send(clientfd,msg,LEN_MSG,0);
+
+
+	sprintf(msg->text,"修改了%d号的信息",*(msg->id));
+	insert_history(msg,db);
 	return;
 
 }

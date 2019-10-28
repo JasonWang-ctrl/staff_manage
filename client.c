@@ -17,7 +17,7 @@
 #define QN 0x7  //根据name查询用户信息
 #define L 0x8  //登录
 #define E 0x9 //退出
-
+#define H 0xA //查询历史记录
 typedef struct{
 	int type;//消息类型
 	char user_name[N];//用户名
@@ -48,6 +48,7 @@ void do_update(int sockfd,MSG *msg);
 void do_query(int sockfd,MSG *msg);
 void modify_pwd(int sockfd,MSG *msg);
 void self_query(int sockfd,MSG *msg);
+void do_history(int sockfd,MSG *msg);
 
 
 
@@ -112,9 +113,9 @@ EXIT:
 SECOND:
 	while(1)//管理员界面
 	{
-		puts("**************************************************************");
-		puts("1.增加用户 2.删除用户信息 3.修改用户信息 4.查询用户信息 5.退出");
-		puts("**************************************************************");
+		puts("*************************************************************************");
+		puts("1.增加用户 2.删除用户信息 3.修改用户信息 4.查询用户信息 5.历史记录 6.退出");
+		puts("*************************************************************************");
 		puts("input cmd>>>");
 		
 		scanf("%d",&cmd);
@@ -134,6 +135,9 @@ SECOND:
 			do_query(sockfd,&msg);
 			break;
 		case 5:
+			do_history(sockfd,&msg);
+			break;
+		case 6:
 			goto BEF;
 			break;
 		default:
@@ -374,4 +378,35 @@ void self_query(int sockfd,MSG *msg)
 	return;
 }
 
+void do_history(int sockfd,MSG *msg)
+{
+	msg->type=H;
+	int i=0;
+	send(sockfd,msg,LEN_MSG,0);
+	recv(sockfd,msg,LEN_MSG,0);
+	if(strncmp(msg->text,"OK",2)==0)
+	{
 
+		while(1)
+		{
+			recv(sockfd,msg,LEN_MSG,0);//等待服务器回应待服务器发送的历史记录条目
+			i++;
+			if(strncmp(msg->text,"over",4)==0)//记录结束跳出循环
+			{
+				break;
+			}
+
+			printf("%-22s",msg->text);
+			if(i%3==0)//每三个换行
+			{putchar(10);}
+		}
+		puts("------------------------------------");
+		puts("History ok!");
+		return;
+	}
+	else
+	{
+		puts("History fail!");
+		return;
+	}
+}
